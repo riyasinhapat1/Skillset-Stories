@@ -1,0 +1,63 @@
+trigger:
+- main 
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  azureWebAppName: 'Skillset-Stories'
+  phpVersion: '7.4'
+  azureResourceGroup: 'portfolio-wordpress-website'
+  localUrl: 'http://localhost/wordpress'
+  azureUrl: 'https://skillset-stories-fjgchtd4e6dah6dd.northcentralus-01.azurewebsites.net'
+
+steps:
+# 1. Install PHP manually
+- script: |
+    sudo apt-get update
+    sudo apt-get install -y php php-cli php-mbstring php-xml unzip curl
+    php -v
+  displayName: 'Install PHP and Dependencies'
+
+# 2. Set up environment
+- script: |
+    sudo apt-get update
+    sudo apt-get install -y unzip
+    echo "Environment setup complete."
+  displayName: 'Set up environment'
+
+# 3. Install Composer (if needed)
+- script: |
+    curl -sS https://getcomposer.org/installer | php
+    php composer.phar install
+  displayName: 'Install Composer dependencies'
+
+# 4. Deploy WordPress files to Azure App Service
+- task: AzureWebApp@1
+  inputs:
+    azureSubscription: 'portfolio-connection' # Updated service connection name
+    appType: 'webAppLinux'
+    appName: $(azureWebAppName)
+    package: $(System.DefaultWorkingDirectory)
+
+# 5. Export, Import, and Update URLs in Database
+- script: |
+    mysqldump -h localhost -u root -pDiggi143# wordpress > wordpress-db.sql
+
+    mysql -h 1be0bd21c8-privatelink.mysql.database.azure.com -u dpwsqczvhw -p#diggiLove 1be0bd21c8_database < wordpress-db.sql
+
+    mysql -h 1be0bd21c8-privatelink.mysql.database.azure.com -u dpwsqczvhw -p#diggiLove 1be0bd21c8_database -e "
+      UPDATE wp_options SET option_value = '$(azureUrl)' WHERE option_name IN ('siteurl', 'home');
+      UPDATE wp_posts SET post_content = REPLACE(post_content, '$(localUrl)', '$(azureUrl)');
+      UPDATE wp_postmeta SET meta_value = REPLACE(meta_value, '$(localUrl)', '$(azureUrl)');
+      UPDATE wp_usermeta SET meta_value = REPLACE(meta_value, '$(localUrl)', '$(azureUrl)');
+      UPDATE wp_comments SET comment_content = REPLACE(comment_content, '$(localUrl)', '$(azureUrl)');
+      UPDATE wp_links SET link_url = REPLACE(link_url, '$(localUrl)', '$(azureUrl)');
+    "
+  displayName: 'Export, Import, and Search-Replace URLs in Database'
+
+# 6. Clear WordPress Cache
+- script: |
+    wp cache flush
+  displayName: 'Flush WordPress Cache'
+  continueOnError: true
